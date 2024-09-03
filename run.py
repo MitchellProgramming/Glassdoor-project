@@ -9,6 +9,7 @@ import asyncio
 import json
 from pathlib import Path
 import glassdoor
+import urllib.parse
 
 
 
@@ -33,10 +34,26 @@ async def run():
     result_salaries = await glassdoor.scrape_salaries(url, max_pages=3)
     output.joinpath("salaries.json").write_text(json.dumps(result_salaries, indent=2, ensure_ascii=False))
     '''
-    url = "https://www.glassdoor.com/Reviews/Adobe-Reviews-E1090.htm"
-    result_reviews = await glassdoor.scrape_reviews(url)
-    output.joinpath("reviews.json").write_text(json.dumps(result_reviews, indent=2, ensure_ascii=False))
-
+    url = "https://www.glassdoor.com/Reviews/Google-Reviews-E9079.htm"
+    url_parts = urllib.parse.urlparse(url)
+    path_parts = url_parts[2].rpartition('/')
+    name = path_parts[-1][:-4]
+    print(name)
+    result_reviews = await glassdoor.scrape_reviews(url, max_pages=None)
+    output.joinpath(name + ".json").write_text(json.dumps(result_reviews, indent=2, ensure_ascii=False))
+    
+    
+    '''
+    #Below are the changes that I made
+    file = open("listOfCompanies.csv","r")
+    for url in file:
+        url_parts=urllib.parse.urlparse(url)
+        path_parts = url_parts[2].rpartition('/')
+        name = path_parts[-1][:-4]
+        print(name)
+        result_reviews = await glassdoor.scrape_reviews(url, max_pages=None)
+        output.joinpath(name + ".json").write_text(json.dumps(result_reviews, indent=2, ensure_ascii=False))
+    '''
 
 if __name__ == "__main__":
     asyncio.run(run())

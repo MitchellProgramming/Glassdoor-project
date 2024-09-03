@@ -11,9 +11,10 @@ import os
 import random
 import re
 import time
+from scrapfly.errors import *
 from typing import Dict, List, Optional, Tuple, TypedDict
 from urllib.parse import urljoin
-
+import datetime
 from loguru import logger as log
 from scrapfly import ScrapeApiResponse, ScrapeConfig, ScrapflyClient, ScrapflyScrapeError
 
@@ -24,9 +25,8 @@ BASE_CONFIG = {
     # for more: https://scrapfly.io/docs/scrape-api/anti-scraping-protection
     "asp": True,
     "country": "US",
-    "proxy_pool":"public_residential_pool",
+    "proxy_pool":"public_datacenter_pool",
 }
-
 
 def find_hidden_data(result: ScrapeApiResponse) -> dict:
     """
@@ -34,6 +34,7 @@ def find_hidden_data(result: ScrapeApiResponse) -> dict:
     It's either in NEXT_DATA script or direct apolloState js variable
     """
     # data can be in __NEXT_DATA__ cache
+#problems stem from here
     data = result.selector.css("script#__NEXT_DATA__::text").get()
     if data:
         data = json.loads(data)["props"]["pageProps"]["apolloCache"]
@@ -126,20 +127,92 @@ async def scrape_reviews(url: str, max_pages: Optional[int] = None) -> Dict:
         ScrapeConfig(url=Url.change_page(first_page.context["url"], page=page), **BASE_CONFIG)
         for page in range(2, total_pages + 1)
     ]
-    #async for result in SCRAPFLY.concurrent_scrape(other_pages):
+
+    #async for result in SCRAPFLY.concurrent_scrape(other_pages,concurrency=SCRAPFLY.CONCURRECY_AUTO):
+    print('MAX', SCRAPFLY.account()['subscription']['max_concurrency'])
+    remainingpagesList=other_pages.copy()
+    totalLengthList=len(other_pages)+1
+    expectedPagesRemaining=int((totalLengthList)/50)
+    iteration=1
+    while len(remainingpagesList)>expectedPagesRemaining and iteration<100:
+        try:
+            async for result in SCRAPFLY.concurrent_scrape(other_pages, concurrency=25):
+            #async for result in SCRAPFLY.concurrent_scrape(other_pages, concurrency=1):
+                if isinstance(result, ScrapeApiResponse) and result.success:
+                    print('URL', result.scrape_config.url)
+
+                    try:
+                        parsereview=parse_reviews(result)["reviews"]
+                        date=parsereview[0]["reviewDateTime"]
+                        dt = datetime.datetime.fromisoformat(date)
+                        print (date)
+
+                        remainingpagesList.remove(result.scrape_config)
+                        '''
+                        if dt.year>=2023:
+                            print("Broke at:",dt.year)
+                            break
+                        '''
+                        reviews["reviews"].extend(parsereview)
+                    except Exception as e:
+                        try:
+                            print('Catch execption ', e)
+                            print('Result', result.error_message)
+                            print('Error', result.error)
+                            print(vars(result))
+                        except Exception as f:
+                            print("No error message")
+
+
+            
+                else:
+                    print('Error Result', result, 'type', type(result))
+                    if isinstance(result, ScrapflyError):
+                        try:
+                            url = result.api_response.config['url']
+                            msg = result.message
+                        except:
+                            url = 'Unknown'
+                            msg = 'Unknown'
+                        log.error(f"failed to scrape {url}, got: {msg}")
+        except Exception as e:
+            print("Excpetion raised:",e)
+        if len(remainingpagesList) ==0:
+            break
+        other_pages=remainingpagesList.copy()
+        print("Remaining Pages:",len(other_pages))
+        iteration+=1
+        time.sleep(iteration)
+    print("Error rate",len(remainingpagesList)/totalLengthList)
+    log.info("scraped {} reviews from {} in {} pages", len(reviews["reviews"]), url, total_pages)
+
+    '''
     for count, config in enumerate(other_pages):
+    
+    result=SCRAPFLY.scrape(config,no_raise=True)
 
-        result=SCRAPFLY.scrape(config,no_raise=True)
-        if result.error is not None:
-            print("Error!")
-            continue
-        print(count, result)
-        #time.sleep(10*random.random())
+    if result.error is not None or not result.success:
+        print("Content",result.content)
+        print("Error message:",result.error_message)
+        
+        continue
+    
+    print(count, result)
+    #time.sleep(10*random.random())
+    print(type(result))
+    '''
+    ''' 
+    if result.error is not None or not result.success:
+        print("Content",result.content)
+        print("Error message:",result.error_message)
+        continue
+    
+    if not isinstance(result, ScrapflyScrapeError):
+        reviews["reviews"].extend(parse_reviews(result)["reviews"])
+    else:
+        log.error(f"failed to scrape {result.api_response.config['url']}, got: {result.message}")
+    '''
 
-        if not isinstance(result, ScrapflyScrapeError):
-            reviews["reviews"].extend(parse_reviews(result)["reviews"])
-        else:
-            log.error(f"failed to scrape {result.api_response.config['url']}, got: {result.message}")
     log.info("scraped {} reviews from {} in {} pages", len(reviews["reviews"]), url, total_pages)
     return reviews
 
