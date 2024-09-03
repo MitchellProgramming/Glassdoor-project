@@ -44,4 +44,7 @@ This Glassdoor.com scraper uses __Python 3.10__ with [scrapfly-sdk](https://pypi
     $ poetry run pytest test.py -k test_search_scraping
     $ poetry run pytest test.py -k test_job_scraping
     ```
+Google Drive Data link:
+https://drive.google.com/drive/u/1/folders/1yGlwNxKrtbQ1fyAhEeZmVADO4Q9cSe6b
+
 
